@@ -8,30 +8,40 @@
 GAME_CSPROJ="osu.Game/osu.Game.csproj"
 ANDROID_PROPS="osu.Android.props"
 IOS_PROPS="osu.iOS.props"
+BROWSER_PROPS="osu.Browser.props"
 SLN="osu.sln"
 
 dotnet remove $GAME_CSPROJ reference ppy.osu.Framework
 dotnet remove $ANDROID_PROPS reference ppy.osu.Framework.Android
 dotnet remove $IOS_PROPS reference ppy.osu.Framework.iOS
+dotnet remove $BROWSER_PROPS reference ppy.osu.Framework.Browser
 
 dotnet sln $SLN add ../osu-framework/osu.Framework/osu.Framework.csproj \
     ../osu-framework/osu.Framework.NativeLibs/osu.Framework.NativeLibs.csproj \
     ../osu-framework/osu.Framework.Android/osu.Framework.Android.csproj \
-    ../osu-framework/osu.Framework.iOS/osu.Framework.iOS.csproj
+    ../osu-framework/osu.Framework.iOS/osu.Framework.iOS.csproj \
+    ../osu-framework/osu.Framework.Browser/osu.Framework.Browser.csproj
 
 dotnet add $GAME_CSPROJ reference ../osu-framework/osu.Framework/osu.Framework.csproj
 dotnet add $ANDROID_PROPS reference ../osu-framework/osu.Framework.Android/osu.Framework.Android.csproj
 dotnet add $IOS_PROPS reference ../osu-framework/osu.Framework.iOS/osu.Framework.iOS.csproj
+dotnet add $BROWSER_PROPS reference ../osu-framework/osu.Framework.Browser/osu.Framework.Browser.csproj
 
 # workaround for dotnet add not inserting $(MSBuildThisFileDirectory) on props files
 sed -i.bak 's:"..\\osu-framework:"$(MSBuildThisFileDirectory)..\\osu-framework:g' ./osu.Android.props && rm osu.Android.props.bak
 sed -i.bak 's:"..\\osu-framework:"$(MSBuildThisFileDirectory)..\\osu-framework:g' ./osu.iOS.props && rm osu.iOS.props.bak
+sed -i.bak 's:"..\\osu-framework:"$(MSBuildThisFileDirectory)..\\osu-framework:g' ./osu.Browser.props && rm osu.Browser.props.bak
 
 # needed because iOS framework nupkg includes a set of properties to work around certain issues during building,
 # and those get ignored when referencing framework via project, threfore we have to manually include it via props reference.
 sed -i.bak '/<\/Project>/i\
   <Import Project=\"$(MSBuildThisFileDirectory)../osu-framework/osu.Framework.iOS.props\"/>\
 ' ./osu.iOS.props && rm osu.iOS.props.bak
+
+# similarly, the browser framework nupkg includes properties required for building (i.e. native libraries to link).
+sed -i.bak '/<\/Project>/i\
+  <Import Project=\"$(MSBuildThisFileDirectory)../osu-framework/osu.Framework.Browser.props\"/>\
+' ./osu.Browser.props && rm osu.Browser.props.bak
 
 tmp=$(mktemp)
 

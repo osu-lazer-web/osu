@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!-- Realm objects are not declared directly in browser projects, so simply disable Fody. -->
+    <DisableFody>true</DisableFody>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Realm does not provide native libraries for browsers, so one is built locally (see osu.Browser/native/build-realm.sh). -->
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)osu.Browser\runtimes\browser-wasm\native\realm-wrappers.a" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\osu-framework\osu.Framework.Browser\osu.Framework.Browser.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\osu-framework\osu.Framework.Browser\osu.Framework.Browser.csproj" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)../osu-framework/osu.Framework.Browser.props" />
+
+  <Import Project="$(MSBuildThisFileDirectory)../osu-framework/osu.Framework.Browser.props"/>
+
+</Project>

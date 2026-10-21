@@ -11,6 +11,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Development;
 using osu.Framework.Extensions;
@@ -157,6 +158,19 @@ namespace osu.Game.Database
         private Realm? updateRealm;
 
         /// <summary>
+        /// On some platforms (i.e. browsers), realm databases are held in memory and discarded as soon as no realm instances remain open.
+        /// On such platforms, this instance retains the database until the <see cref="updateRealm"/> is available to do so instead.
+        /// </summary>
+        private Realm? inMemoryRetentionRealm;
+
+        /// <summary>
+        /// The delay after a change to an in-memory database before it is persisted (see <see cref="persistInMemoryDatabase"/>).
+        /// </summary>
+        private const int in_memory_persistence_delay = 2000;
+
+        private Timer? inMemoryPersistenceTimer;
+
+        /// <summary>
         /// Tracks whether a realm was ever fetched from this instance.
         /// After a fetch occurs, blocking operations will be guaranteed to restore any subscriptions.
         /// </summary>
@@ -181,6 +195,16 @@ namespace osu.Game.Database
                 updateRealm = getRealmInstance();
                 hasInitialisedOnce = true;
 
+                // The update realm is kept open from here on, so retaining the database via a separate instance is no longer required.
+                inMemoryRetentionRealm?.Dispose();
+                inMemoryRetentionRealm = null;
+
+                if (RuntimeInfo.IsBrowser)
+                {
+                    inMemoryPersistenceTimer ??= new Timer(_ => persistInMemoryDatabase());
+                    updateRealm.RealmChanged += (_, _) => inMemoryPersistenceTimer.Change(in_memory_persistence_delay, Timeout.Infinite);
+                }
+
                 Logger.Log(@$"Opened realm ""{updateRealm.Config.DatabasePath}"" at version {updateRealm.Config.SchemaVersion}");
 
                 // Resubscribe any subscriptions
@@ -191,6 +215,30 @@ namespace osu.Game.Database
             Debug.Assert(updateRealm != null);
 
             return updateRealm;
+        }
+
+        /// <summary>
+        /// Writes a copy of an in-memory database to its file path, from which it is restored on the next startup.
+        /// This is only performed on browsers (see <see cref="inMemoryRetentionRealm"/>), where the file system is persisted separately.
+        /// </summary>
+        private void persistInMemoryDatabase()
+        {
+            // Timer callbacks are run on the main thread between frames on browsers, so the update realm can be used safely.
+            if (isDisposed || updateRealm == null)
+                return;
+
+            string temporaryFilename = $"{Filename}.persist";
+
+            try
+            {
+                storage.Delete(temporaryFilename);
+                updateRealm.WriteCopy(new RealmConfiguration(storage.GetFullPath(temporaryFilename)));
+                storage.Move(temporaryFilename, Filename);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e, "Failed to persist realm database.");
+            }
         }
 
         internal static bool CurrentThreadSubscriptionsAllowed => current_thread_subscriptions_allowed.Value;
@@ -221,7 +269,12 @@ namespace osu.Game.Database
 
             // `prepareFirstRealmAccess()` triggers the first `getRealmInstance` call, which will implicitly run realm migrations and bring the schema up-to-date.
             using (var realm = prepareFirstRealmAccess())
+            {
+                if (RuntimeInfo.IsBrowser)
+                    inMemoryRetentionRealm = getRealmInstance();
+
                 cleanupPendingDeletions(realm);
+            }
         }
 
         /// <summary>
@@ -1515,7 +1568,9 @@ namespace osu.Game.Database
             if (!pendingAsyncOperations.Wait(10000))
                 Logger.Log("Realm took too long waiting on pending async writes", level: LogLevel.Error);
 
+            inMemoryPersistenceTimer?.Dispose();
             updateRealm?.Dispose();
+            inMemoryRetentionRealm?.Dispose();
 
             if (!isDisposed)
             {

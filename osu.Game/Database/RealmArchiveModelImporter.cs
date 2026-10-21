@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Humanizer;
+using osu.Framework;
 using osu.Framework.Extensions;
 using osu.Framework.Extensions.IEnumerableExtensions;
 using osu.Framework.Logging;
@@ -120,9 +121,16 @@ namespace osu.Game.Database
 
             await pauseIfNecessaryAsync(parameters, notification, notification.CancellationToken).ConfigureAwait(false);
 
+            var parallelOptions = new ParallelOptions { CancellationToken = notification.CancellationToken };
+
+            // On runtimes which don't support multiple threads, waiting on an import is only possible if all of its work is run via a ThreadedTaskScheduler
+            // (see TaskExtensions.WaitSafely()), as opposed to the default thread pool.
+            if (!RuntimeInfo.SupportsMultipleThreads)
+                parallelOptions.TaskScheduler = parameters.Batch ? import_scheduler_batch : import_scheduler;
+
             try
             {
-                await Parallel.ForEachAsync(tasks, notification.CancellationToken, async (task, cancellation) =>
+                await Parallel.ForEachAsync(tasks, parallelOptions, async (task, cancellation) =>
                 {
                     cancellation.ThrowIfCancellationRequested();
 

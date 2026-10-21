@@ -1,0 +1,264 @@
+diff --git a/src/realm/alloc_slab.cpp b/src/realm/alloc_slab.cpp
+index c421e1c..02f8213 100644
+--- a/src/realm/alloc_slab.cpp
++++ b/src/realm/alloc_slab.cpp
+@@ -934,6 +934,36 @@ void SlabAlloc::init_in_memory_buffer()
+     m_ref_translation_ptr = ref_translation_ptr;
+ }
+ 
++ref_type SlabAlloc::init_in_memory_buffer(const char* data, size_t size)
++{
++    std::string path;                                     // No path
++    ref_type top_ref = validate_header(data, size, path); // Throws
++
++    m_attach_mode = attach_Heap;
++
++    const size_t section_size = size_t(1) << section_shift;
++    for (size_t start = 0; start == 0 || start < size; start += section_size) {
++        m_virtual_file_buffer.emplace_back(section_size, start);
++        memcpy(m_virtual_file_buffer.back().addr, data + start, std::min(section_size, size - start));
++    }
++
++    m_data = m_virtual_file_buffer.front().addr;
++    m_virtual_file_size = size;
++
++    // The footer of a file on streaming form is not retained once the buffer is written to,
++    // so the header must refer to the top ref directly instead.
++    Header& header = *reinterpret_cast<Header*>(m_virtual_file_buffer.front().addr);
++    header.m_top_ref[0] = top_ref;
++    header.m_top_ref[1] = 0;
++    header.m_flags = 0;
++
++    m_baseline = size;
++    m_translation_table_size = 0;
++    rebuild_translations(true, 0);
++
++    return top_ref;
++}
++
+ char* SlabAlloc::translate_memory_pos(ref_type ref) const noexcept
+ {
+     auto idx = get_section_index(ref);
+diff --git a/src/realm/alloc_slab.hpp b/src/realm/alloc_slab.hpp
+index d3392cc..ca9b8fc 100644
+--- a/src/realm/alloc_slab.hpp
++++ b/src/realm/alloc_slab.hpp
+@@ -183,6 +183,11 @@ public:
+     ref_type attach_buffer(const char* data, size_t size);
+ 
+     void init_in_memory_buffer();
++
++    /// Initialise the in-memory buffer with the contents of an existing realm file (which may be on streaming form).
++    /// \return The top ref of the file.
++    /// \throw InvalidDatabase if the file is invalid.
++    ref_type init_in_memory_buffer(const char* data, size_t size);
+     char* translate_memory_pos(ref_type ref) const noexcept;
+ 
+     bool is_in_memory() const
+diff --git a/src/realm/db.cpp b/src/realm/db.cpp
+index fc7e744..4c8b023 100644
+--- a/src/realm/db.cpp
++++ b/src/realm/db.cpp
+@@ -1522,13 +1522,18 @@ void DB::set_logger(const std::shared_ptr<util::Logger>& logger) noexcept
+         m_logger = std::make_shared<DBLogger>(logger, m_log_id);
+ }
+ 
+-void DB::open(Replication& repl, const DBOptions& options)
++void DB::open(Replication& repl, const DBOptions& options, BinaryData initial_data)
+ {
+     REALM_ASSERT(!is_attached());
+     repl.initialize(*this); // Throws
+     set_replication(&repl);
+ 
+-    m_alloc.init_in_memory_buffer();
++    ref_type top_ref = 0;
++
++    if (initial_data.size())
++        top_ref = m_alloc.init_in_memory_buffer(initial_data.data(), initial_data.size()); // Throws
++    else
++        m_alloc.init_in_memory_buffer();
+ 
+     set_logger(options.logger);
+     m_replication->set_logger(m_logger.get());
+@@ -1549,7 +1554,7 @@ void DB::open(Replication& repl, const DBOptions& options)
+     info->file_format_version = target_file_format_version;
+     info->number_of_versions = 1;
+     info->latest_version_number = 1;
+-    info->init_versioning(0, m_alloc.get_baseline(), 1);
++    info->init_versioning(top_ref, m_alloc.get_baseline(), 1);
+     ++info->num_participants;
+ 
+     m_version_manager = std::make_unique<InMemoryVersionManager>(info, m_versionlist_mutex);
+@@ -2827,6 +2832,17 @@ DBRef DB::create_in_memory(std::unique_ptr<Replication> repl, const std::string&
+     return db;
+ }
+ 
++DBRef DB::create_in_memory(std::unique_ptr<Replication> repl, const std::string& in_memory_path,
++                           BinaryData initial_data, const DBOptions& options) NO_THREAD_SAFETY_ANALYSIS
++{
++    REALM_ASSERT(repl);
++    DBRef db = std::make_shared<DB>(Private(), options);
++    db->m_history = std::move(repl);
++    db->open(*db->m_history, options, initial_data);
++    db->m_db_path = in_memory_path;
++    return db;
++}
++
+ DBRef DB::create(BinaryData buffer, bool take_ownership) NO_THREAD_SAFETY_ANALYSIS
+ {
+     DBOptions options;
+diff --git a/src/realm/db.hpp b/src/realm/db.hpp
+index 40f3aee..93bcb32 100644
+--- a/src/realm/db.hpp
++++ b/src/realm/db.hpp
+@@ -138,6 +138,9 @@ public:
+     // SyncUser::register_session) SyncSession::path() relies on the registered `m_db->get_path`
+     static DBRef create_in_memory(std::unique_ptr<Replication> repl, const std::string& file,
+                                   const DBOptions& options = DBOptions());
++    // Creates an in-memory database which is initialised with the contents of an existing realm file.
++    static DBRef create_in_memory(std::unique_ptr<Replication> repl, const std::string& file, BinaryData initial_data,
++                                  const DBOptions& options = DBOptions());
+ 
+     ~DB() noexcept;
+ 
+@@ -545,7 +548,7 @@ private:
+     void open(const std::string& file, const DBOptions& options = DBOptions()) REQUIRES(!m_mutex);
+     void open(BinaryData, bool take_ownership = true) REQUIRES(!m_mutex);
+     void open(Replication&, const std::string& file, const DBOptions& options = DBOptions()) REQUIRES(!m_mutex);
+-    void open(Replication& repl, const DBOptions& options = DBOptions()) REQUIRES(!m_mutex);
++    void open(Replication& repl, const DBOptions& options = DBOptions(), BinaryData initial_data = {}) REQUIRES(!m_mutex);
+ 
+     void do_open(const std::string& file, const DBOptions& options);
+ 
+diff --git a/src/realm/object-store/impl/emscripten/external_commit_helper.cpp b/src/realm/object-store/impl/emscripten/external_commit_helper.cpp
+index 034b9ed..f27496e 100644
+--- a/src/realm/object-store/impl/emscripten/external_commit_helper.cpp
++++ b/src/realm/object-store/impl/emscripten/external_commit_helper.cpp
+@@ -21,6 +21,7 @@
+ #endif
+ 
+ #include <realm/object-store/impl/external_commit_helper.hpp>
++#include <emscripten/eventloop.h>
+ #include <realm/object-store/impl/realm_coordinator.hpp>
+ 
+ using namespace realm;
+@@ -31,7 +32,26 @@ ExternalCommitHelper::ExternalCommitHelper(RealmCoordinator& parent, const Realm
+ {
+ }
+ 
++ExternalCommitHelper::~ExternalCommitHelper()
++{
++    if (m_timeout) {
++        emscripten_clear_timeout(*m_timeout);
++    }
++}
++
+ void ExternalCommitHelper::notify_others()
+ {
+-    m_parent.on_change();
++    // This is called from within a commit, where running notifiers synchronously breaks the coordinator's invariants
++    // (the notifier transaction would advance past the version being committed). Other platforms notify a background
++    // worker instead, so mirror that by deferring to the event loop.
++    if (!m_timeout) {
++        m_timeout = emscripten_set_timeout(timeout_callback, 0, this);
++    }
++}
++
++void ExternalCommitHelper::timeout_callback(void* user_data)
++{
++    auto helper = reinterpret_cast<ExternalCommitHelper*>(user_data);
++    helper->m_timeout.reset();
++    helper->m_parent.on_change();
+ }
+diff --git a/src/realm/object-store/impl/emscripten/external_commit_helper.hpp b/src/realm/object-store/impl/emscripten/external_commit_helper.hpp
+index 9c53a78..422455a 100644
+--- a/src/realm/object-store/impl/emscripten/external_commit_helper.hpp
++++ b/src/realm/object-store/impl/emscripten/external_commit_helper.hpp
+@@ -16,6 +16,8 @@
+ //
+ ////////////////////////////////////////////////////////////////////////////
+ 
++#include <optional>
++
+ namespace realm {
+ struct RealmConfig;
+ 
+@@ -25,12 +27,17 @@ class RealmCoordinator;
+ class ExternalCommitHelper {
+ public:
+     ExternalCommitHelper(RealmCoordinator& parent, const RealmConfig&);
+-    ~ExternalCommitHelper() = default;
++    ~ExternalCommitHelper();
+ 
+     void notify_others();
+ 
+ private:
+     RealmCoordinator& m_parent;
++
++    // The pending timeout which will notify the coordinator of changes, if any.
++    std::optional<int> m_timeout;
++
++    static void timeout_callback(void* user_data);
+ };
+ 
+ } // namespace _impl
+diff --git a/src/realm/object-store/impl/realm_coordinator.cpp b/src/realm/object-store/impl/realm_coordinator.cpp
+index f2e39c6..3dd15da 100644
+--- a/src/realm/object-store/impl/realm_coordinator.cpp
++++ b/src/realm/object-store/impl/realm_coordinator.cpp
+@@ -39,9 +39,37 @@
+ #include <algorithm>
+ #include <unordered_map>
+ 
++#ifdef __EMSCRIPTEN__
++#include <realm/util/file.hpp>
++#endif
++
+ using namespace realm;
+ using namespace realm::_impl;
+ 
++#ifdef __EMSCRIPTEN__
++namespace {
++// Databases are always held in memory on Emscripten (see RealmCoordinator::open_db()), and would otherwise be empty
++// on each launch. Read the contents of any existing database file at the given path to initialise the database with.
++std::unique_ptr<char[]> read_in_memory_db_initial_data(const std::string& path, size_t& size)
++{
++    size = 0;
++
++    if (path.empty() || !util::File::exists(path))
++        return nullptr;
++
++    util::File file(path, util::File::mode_Read);
++    size = size_t(file.get_size());
++
++    if (size == 0)
++        return nullptr;
++
++    std::unique_ptr<char[]> data(new char[size]);
++    file.read(0, data.get(), size);
++    return data;
++}
++} // anonymous namespace
++#endif
++
+ static auto& s_coordinator_mutex = *new std::mutex;
+ static auto& s_coordinators_per_path = *new std::unordered_map<std::string, std::weak_ptr<RealmCoordinator>>;
+ 
+@@ -348,7 +376,16 @@ bool RealmCoordinator::open_db()
+             // Force the DB to be created in memory-only mode, ignoring the filesystem path supplied in the config.
+             // This is so we can run an SDK on top without having to solve the browser persistence problem yet,
+             // or teach RealmConfig and SDKs about pure in-memory realms.
+-            m_db = DB::create_in_memory(std::move(history), m_config.path, options);
++            //
++            // To allow for persistence, the database is initialised with the contents of any existing database file,
++            // which the SDK may have written as a copy of the realm.
++            size_t initial_data_size = 0;
++            auto initial_data = m_config.in_memory ? nullptr : read_in_memory_db_initial_data(m_config.path, initial_data_size);
++
++            if (initial_data)
++                m_db = DB::create_in_memory(std::move(history), m_config.path, BinaryData(initial_data.get(), initial_data_size), options);
++            else
++                m_db = DB::create_in_memory(std::move(history), m_config.path, options);
+ #else
+             if (m_config.path.size()) {
+                 m_db = DB::create(std::move(history), m_config.path, options);

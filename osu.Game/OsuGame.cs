@@ -1048,13 +1048,29 @@ namespace osu.Game
             Logger.NewEntry -= forwardTabletLogToNotifications;
         }
 
+        private static WindowMode getDefaultWindowMode()
+        {
+            switch (RuntimeInfo.OS)
+            {
+                case RuntimeInfo.Platform.macOS:
+                    return WindowMode.Borderless;
+
+                case RuntimeInfo.Platform.Browser:
+                    return WindowMode.Windowed;
+
+                default:
+                    return WindowMode.Fullscreen;
+            }
+        }
+
         protected override IDictionary<FrameworkSetting, object> GetFrameworkConfigDefaults()
         {
             return new Dictionary<FrameworkSetting, object>
             {
                 // General expectation that osu! starts in fullscreen by default (also gives the most predictable performance).
                 // However, macOS is bound to have issues when using exclusive fullscreen as it takes full control away from OS, therefore borderless is default there.
-                { FrameworkSetting.WindowMode, RuntimeInfo.OS == RuntimeInfo.Platform.macOS ? WindowMode.Borderless : WindowMode.Fullscreen },
+                // Browsers only allow entering fullscreen in response to user input, so start windowed (filling the page) there.
+                { FrameworkSetting.WindowMode, getDefaultWindowMode() },
                 { FrameworkSetting.VolumeUniversal, 0.6 },
                 { FrameworkSetting.VolumeMusic, 0.6 },
                 { FrameworkSetting.VolumeEffect, 0.6 },

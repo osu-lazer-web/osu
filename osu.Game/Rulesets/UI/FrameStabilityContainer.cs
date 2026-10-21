@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
@@ -158,7 +159,9 @@ namespace osu.Game.Rulesets.UI
             }
 
             // TODO: replace IsDebugBuild with a framework flag which asserts we are in a test scene, interactively or otherwise.
-            bool allowReferenceClockSeeks = hasReplayAttached || DebugUtils.IsNUnitRunning || DebugUtils.IsDebugBuild || !FrameStablePlayback;
+            bool allowReferenceClockSeeks = hasReplayAttached || DebugUtils.IsNUnitRunning || DebugUtils.IsDebugBuild || !FrameStablePlayback
+                                            // Browsers don't use BASS (see below), and long-running frames are expected as all work is performed on a single thread.
+                                            || RuntimeInfo.IsBrowser;
 
             // This is a hotfix for ongoing bass issues we are trying to resolve (see https://www.un4seen.com/forum/?topic=20482.msg145474#msg145474)
             //

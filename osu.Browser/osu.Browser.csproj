@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup Label="Project">
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Description>A free-to-win rhythm game. Rhythm is just a *click* away!</Description>
+    <AssemblyTitle>osu!(lazer)</AssemblyTitle>
+    <Title>osu!</Title>
+    <Product>osu!(lazer)</Product>
+    <Version>0.0.0</Version>
+    <FileVersion>0.0.0</FileVersion>
+  </PropertyGroup>
+  <Import Project="..\osu.Browser.props" />
+  <ItemGroup Label="Project References">
+    <ProjectReference Include="..\osu.Game\osu.Game.csproj" />
+    <ProjectReference Include="..\osu.Game.Rulesets.Osu\osu.Game.Rulesets.Osu.csproj" />
+    <ProjectReference Include="..\osu.Game.Rulesets.Catch\osu.Game.Rulesets.Catch.csproj" />
+    <ProjectReference Include="..\osu.Game.Rulesets.Mania\osu.Game.Rulesets.Mania.csproj" />
+    <ProjectReference Include="..\osu.Game.Rulesets.Taiko\osu.Game.Rulesets.Taiko.csproj" />
+  </ItemGroup>
+</Project>

@@ -384,6 +384,8 @@ namespace osu.Game
             // add api components to hierarchy.
             if (API is APIAccess apiAccess)
                 base.Content.Add(apiAccess);
+            else if (API is OfflineAPIAccess offlineAPIAccess)
+                base.Content.Add(offlineAPIAccess);
 
             base.Content.Add(SpectatorClient);
             base.Content.Add(MultiplayerClient);

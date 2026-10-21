@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.Toolkit.HighPerformance;
+using osu.Framework;
 using osu.Framework.Extensions;
 using osu.Framework.IO.Stores;
 using SharpCompress.Archives;
@@ -72,6 +73,15 @@ namespace osu.Game.IO.Archives
             {
                 if (entry.Size > MaximumEntrySize)
                     throw new InsufficientMemoryException($@"Size of file ""{name}"" exceeds allowable limit of {MaximumEntrySize} bytes");
+
+                // The memory-backed stream used below fails to be read on browsers (due to a runtime limitation with generic span usages),
+                // so fall back to a standard memory stream.
+                if (entry.Size > 0 && RuntimeInfo.IsBrowser)
+                {
+                    byte[] data = new byte[entry.Size];
+                    s.ReadExactly(data);
+                    return new MemoryStream(data);
+                }
 
                 if (entry.Size > 0)
                 {

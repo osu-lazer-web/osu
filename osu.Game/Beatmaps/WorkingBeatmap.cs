@@ -11,6 +11,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using osu.Framework;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
 using osu.Framework.Extensions;
@@ -231,27 +232,33 @@ namespace osu.Game.Beatmaps
         {
             lock (beatmapFetchLock)
             {
-                return beatmapLoadTask ??= Task.Factory.StartNew(() =>
-                {
-                    // Todo: Handle cancellation during beatmap parsing
-                    var b = GetBeatmap() ?? new Beatmap();
+                // Blocking on the load (see Beatmap) is not possible on runtimes which don't support multiple threads, so load inline instead.
+                if (!RuntimeInfo.SupportsMultipleThreads)
+                    return beatmapLoadTask ??= Task.FromResult(loadBeatmap());
 
-                    // Copy across values of key properties for which the database-backed model has data that the decoded beatmap isn't going to.
-                    b.BeatmapInfo.ID = BeatmapInfo.ID;
-                    b.BeatmapInfo.UserSettings = BeatmapInfo.UserSettings;
-                    b.BeatmapInfo.BeatmapSet = BeatmapInfo.BeatmapSet;
-                    b.BeatmapInfo.Status = BeatmapInfo.Status;
-                    b.BeatmapInfo.OnlineID = BeatmapInfo.OnlineID;
-                    b.BeatmapInfo.OnlineMD5Hash = BeatmapInfo.OnlineMD5Hash;
-                    b.BeatmapInfo.LastLocalUpdate = BeatmapInfo.LastLocalUpdate;
-                    b.BeatmapInfo.LastOnlineUpdate = BeatmapInfo.LastOnlineUpdate;
-                    b.BeatmapInfo.LastPlayed = BeatmapInfo.LastPlayed;
-                    b.BeatmapInfo.EditorTimestamp = BeatmapInfo.EditorTimestamp;
-                    b.BeatmapInfo.StarRating = BeatmapInfo.StarRating; // this could be recomputed in the decoding process but it's a bit annoying to do.
-
-                    return b;
-                }, loadCancellationSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                return beatmapLoadTask ??= Task.Factory.StartNew(loadBeatmap, loadCancellationSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             }
+        }
+
+        private IBeatmap loadBeatmap()
+        {
+            // Todo: Handle cancellation during beatmap parsing
+            var b = GetBeatmap() ?? new Beatmap();
+
+            // Copy across values of key properties for which the database-backed model has data that the decoded beatmap isn't going to.
+            b.BeatmapInfo.ID = BeatmapInfo.ID;
+            b.BeatmapInfo.UserSettings = BeatmapInfo.UserSettings;
+            b.BeatmapInfo.BeatmapSet = BeatmapInfo.BeatmapSet;
+            b.BeatmapInfo.Status = BeatmapInfo.Status;
+            b.BeatmapInfo.OnlineID = BeatmapInfo.OnlineID;
+            b.BeatmapInfo.OnlineMD5Hash = BeatmapInfo.OnlineMD5Hash;
+            b.BeatmapInfo.LastLocalUpdate = BeatmapInfo.LastLocalUpdate;
+            b.BeatmapInfo.LastOnlineUpdate = BeatmapInfo.LastOnlineUpdate;
+            b.BeatmapInfo.LastPlayed = BeatmapInfo.LastPlayed;
+            b.BeatmapInfo.EditorTimestamp = BeatmapInfo.EditorTimestamp;
+            b.BeatmapInfo.StarRating = BeatmapInfo.StarRating; // this could be recomputed in the decoding process but it's a bit annoying to do.
+
+            return b;
         }
 
         #endregion

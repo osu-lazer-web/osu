@@ -7,6 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using osu.Framework;
 using osu.Framework.Development;
 using osu.Framework.IO.Network;
 using osu.Framework.Logging;
@@ -53,6 +54,10 @@ namespace osu.Game.Beatmaps
         {
             // avoid downloading / using cache for unit tests.
             if (DebugUtils.IsNUnitRunning)
+                return false;
+
+            // browsers block cross-origin requests to the online cache.
+            if (RuntimeInfo.IsBrowser)
                 return false;
 
             if (!storage.Exists(cache_database_name))
@@ -172,7 +177,7 @@ namespace osu.Game.Beatmaps
         {
             // This is guarded in the local call, but also included as a safety
             // for any incorrect public usage.
-            if (DebugUtils.IsNUnitRunning)
+            if (DebugUtils.IsNUnitRunning || RuntimeInfo.IsBrowser)
                 return Task.CompletedTask;
 
             bool isRefetch = storage.Exists(cache_database_name);
