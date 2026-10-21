@@ -22,8 +22,14 @@ canvas {
     background: #171a1c;
 }
 
-#overlay[hidden] {
+#overlay[hidden],
+#progress[hidden] {
     display: none;
+}
+
+#status {
+    max-width: 80vw;
+    text-align: center;
 }
 
 #progress {
@@ -41,6 +47,7 @@ canvas {
     transition: width 0.2s;
 }
 
+#download,
 #start {
     padding: 12px 32px;
     font-size: 18px;

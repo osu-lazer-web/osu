@@ -1,12 +1,22 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-import { dotnet } from './_framework/dotnet.js';
-
 const overlay = document.getElementById('overlay');
 const status = document.getElementById('status');
+const download = document.getElementById('download');
+const progress = document.getElementById('progress');
 const progressBar = document.getElementById('progress-bar');
 const start = document.getElementById('start');
+
+// The game files are large, so they should only be downloaded once the user has confirmed.
+await new Promise(resolve => download.addEventListener('click', resolve, { once: true }));
+
+download.hidden = true;
+progress.hidden = false;
+status.textContent = 'Downloading...';
+
+// The runtime is imported dynamically, as a static import would begin downloading it before confirmation.
+const { dotnet } = await import('./_framework/dotnet.js');
 
 const runtime = await dotnet
     .withConfig({
